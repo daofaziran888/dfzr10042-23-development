@@ -11,11 +11,15 @@
 .
 ├── frontend/                 Vue 3 + Vite + TypeScript 前端
 │   ├── src/views/WorkbenchView.vue|tsx  全部模块共享工作台
+│   ├── src/views/SupplierReconView.vue 供应商归属对账工作台
 │   ├── src/data/modules.ts              18个业务模块配置
-│   ├── src/api/              统一请求封装
+│   ├── src/api/              统一请求封装（recon.ts 为归属对账接口）
 │   └── vite.config.ts        dev server 配置（open: false）
 ├── backend/                  FastAPI（Python） 后端
 │   ├── app/routers/resource.py  通用查询/导出/登记/动作接口
+│   ├── app/routers/recon.py     归属对账、账单流转与应付月报接口
+│   ├── app/domain/supplier_recon.py  合同归属/生效日核验（纯函数）
+│   ├── app/services/supplier_recon.py 批次、账单、账本与报告
 │   ├── app/services/<key>.py    每个模块独立领域逻辑
 │   ├── app/services/base.py     共享服务骨架
 │   └── app/store.py          内存数据仓库与示例数据
@@ -80,6 +84,31 @@ npm run dev
   `frontend/src/domain/<模块>.ts`，用于承载真实业务差异并维持36题位容量。
 - 列表接口统一返回 `{ items, total, page, size }`，动作接口统一返回 `{ ok, message }`。
 - 状态流转只允许在 `app/services` 里改，路由层不做业务判断。
+
+## 供应商归属对账
+
+供应商明细原先只按业务键（订单号）关联，同一订单号在甲、乙公司各有一条时无法判断
+哪条属于本次报表。新增的归属对账层在业务键之上再核验三件事：合同归属、合同有效期
+（含跨月结束日）、以及报表部门。
+
+| 入口 | 地址 | 用途 |
+| --- | --- | --- |
+| 前端工作台 | `/supplier_recon` | 关联入口、批次、账单流转与月报 |
+| 关联入口 | `GET /api/recon/association?period=2026-11&company=甲公司&order_key=SO-20261101` | 两公司、日期边界、拒绝原因 |
+| 归属批次 | `POST /api/recon/batches` | 按合同与生效日生成批次和待签账单 |
+| 账单 | `POST /api/recon/bills/{id}/claim|remove-line|return|sign` | 领取/剔除/退回复核/签发 |
+| 合同更正 | `POST /api/recon/corrections` | 生效日早于交易时撤回原资格 |
+| 应付月报 | `POST /api/recon/reports` | 只从批次取有证明的入账行 |
+
+核验结论与拒绝码：`ELIGIBLE` 合格、`OUT_OF_PERIOD` 不在对账期、`NO_CONTRACT`
+无合同归属、`EXPIRED_ORDER` 过期订单、`WRONG_DEPARTMENT` 错部门、
+`CONTRACT_REVOKED` 合同更正撤回、`UNAUTHORIZED` 越权关联、`REMOVED` 已剔除。
+「过期订单」和「错部门」是两个独立拒绝码，便于区分是日期越界还是归属公司/部门不对。
+
+账单流转：`待领取 → 已领取 → 已签发`，已领取可 `退回复核` 或剔除不合格行；
+退回复核的账单在重新领取前本期不入账。签发时按当前合同/更正/越权状态重新核验，
+存在未剔除的不合格行一律拒绝签发；进程锁 + 账本按账单唯一，同一账单并发签发只入账
+一次；入账记录冻结签发时的行级口径与哈希，之后合同再更正也能按历史口径复算。
 
 领域：数据工程
 子方向：数据分析与数据应用

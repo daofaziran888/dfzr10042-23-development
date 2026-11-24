@@ -15,6 +15,11 @@
       </div>
     </header>
 
+    <p v-if="reconLink" class="recon-banner" data-testid="recon-link">
+      <span>{{ reconLink.hint }}</span>
+      <RouterLink :to="reconLink.path">{{ reconLink.label }} →</RouterLink>
+    </p>
+
     <div class="stat-row">
       <article v-for="item in stats" :key="item.label" class="stat-card">
         <span class="stat-label">{{ item.label }}</span>
@@ -107,6 +112,19 @@ import type { EntryRow } from '@/data/types'
 
 const props = defineProps<{ moduleKey: string }>()
 const meta = moduleMeta(props.moduleKey)
+const reconLinks: Record<string, { hint: string; label: string; path: string }> = {
+  dataset_join: {
+    hint: '关联方案只按业务键匹配；交易日期边界与归属拒绝原因请在归属对账的关联入口核验。',
+    label: '打开供应商归属对账',
+    path: '/supplier_recon',
+  },
+  report_builder: {
+    hint: '应付月报只从归属对账批次取数；本期实际入账、部门接收金额与未签发记录在那里复核。',
+    label: '查看本期归属对账月报',
+    path: '/supplier_recon',
+  },
+}
+const reconLink = reconLinks[props.moduleKey] ?? null
 const rows = ref<EntryRow[]>([])
 const total = ref(0)
 const errorMessage = ref('')
